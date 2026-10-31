@@ -1,0 +1,49 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+<modelVersion>4.0.0</modelVersion>
+<groupId>digitalprivacy</groupId>
+<artifactId>digital-privacy-assistant</artifactId>
+<version>1.0</version>
+<properties>
+<maven.compiler.source>17</maven.compiler.source>
+<maven.compiler.target>17</maven.compiler.target>
+<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+</properties>
+<dependencies>
+<!--  Google API  -->
+<dependency>
+<groupId>com.google.api-client</groupId>
+<artifactId>google-api-client</artifactId>
+<version>2.8.1</version>
+</dependency>
+<!--  Google OAuth  -->
+<dependency>
+<groupId>com.google.oauth-client</groupId>
+<artifactId>google-oauth-client-jetty</artifactId>
+<version>1.39.0</version>
+</dependency>
+<!--  Gmail API  -->
+<dependency>
+<groupId>com.google.apis</groupId>
+<artifactId>google-api-services-gmail</artifactId>
+<version>v1-rev20240520-2.0.0</version>
+</dependency>
+<!--  MySQL Connector  -->
+<dependency>
+<groupId>com.mysql</groupId>
+<artifactId>mysql-connector-j</artifactId>
+<version>8.4.0</version>
+</dependency>
+</dependencies>
+<build>
+<plugins>
+<plugin>
+<groupId>org.codehaus.mojo</groupId>
+<artifactId>exec-maven-plugin</artifactId>
+<version>3.1.1</version>
+<configuration>
+<mainClass>Main</mainClass>
+</configuration>
+</plugin>
+</plugins>
+</build>
+</project>

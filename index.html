@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Privacy Assistant</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2937; --muted:#4b5563; --card:#f3f4f6; --accent:#1d4ed8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111827; --fg:#f3f4f6; --muted:#9ca3af; --card:#1f2937; --accent:#93c5fd; }
+  }
+  body { font-family: Arial, Helvetica, sans-serif; background:var(--bg); color:var(--fg); margin:0; line-height:1.6; }
+  main { max-width:760px; margin:0 auto; padding:32px 20px; }
+  h1 { margin-bottom:4px; }
+  .sub { color:var(--muted); margin-top:0; }
+  .card { background:var(--card); border-radius:10px; padding:14px 18px; margin:16px 0; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Digital Privacy Assistant</h1>
+  <p class="sub">Find forgotten accounts, check which ones are risky, and delete the ones you no longer use.</p>
+
+  <div class="card">
+    <h2>The problem</h2>
+    <p>People sign up on many websites and apps and then forget them. Those accounts still hold personal details
+    such as name, phone number and address, and these details can leak in a data breach.</p>
+  </div>
+
+  <div class="card">
+    <h2>What the app does</h2>
+    <ul>
+      <li>Finds accounts linked to your email address, using only the sender and subject of signup, verification, password-reset and order emails in your Gmail (read-only).</li>
+      <li>Shows which accounts appear in known data breaches and what kind of data leaked.</li>
+      <li>Ranks which accounts to clean up first and gives a simple privacy score.</li>
+      <li>Helps you delete unused accounts with steps, a ready-made request letter, and follow-up reminders.</li>
+      <li>Checks whether a password has appeared in known breaches, without sending the password anywhere.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Your data</h2>
+    <p>The app never reads the body of your emails and never changes or deletes anything in your Gmail.
+    Read the full <a href="privacy.html">Privacy Policy</a>.</p>
+  </div>
+
+  <p class="sub">A student project built for learning and for a college/hackathon submission.</p>
+</main>
+</body>
+</html>

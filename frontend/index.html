@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Privacy Assistant</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="header">
+    <div class="logo-container">
+        <div class="logo-badge">🛡️</div>
+        <div class="logo-text">
+            <h1>Digital Privacy Assistant</h1>
+            <span>Find your accounts. Understand your privacy risks.</span>
+        </div>
+    </div>
+    <nav class="nav">
+        <a href="#home">Home</a>
+        <a href="#dashboard">Summary</a>
+        <a href="#accounts">Accounts</a>
+        <a href="#deleteSection">Deletion help</a>
+    </nav>
+    <div class="nav-actions">
+        <div class="mode-badge"><span class="dot"></span><span id="backendModeText">Checking backend...</span></div>
+    </div>
+</header>
+
+<section id="home" class="hero">
+    <h2>Find the accounts linked to your <span>email</span></h2>
+    <p>
+        Connect your Google account. The app reads only the sender, subject and date of signup, verification,
+        password-reset, sign-in and order emails in your Gmail. It never asks for your password and never reads email bodies.
+    </p>
+    <div class="scan-box-main">
+        <div class="scan-input-row">
+            <input type="email" id="emailInput" placeholder="Your Gmail address" autocomplete="email">
+            <button type="button" class="btn" id="findBtn" onclick="findAccounts()">Find Accounts</button>
+        </div>
+        <div style="display:flex; gap:10px; justify-content:center; margin-top:14px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" id="connectBtn" onclick="connectGoogle()">Connect Google</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="disconnectBtn" onclick="disconnectGoogle()" style="display:none;">Disconnect Google</button>
+        </div>
+        <div id="statusMsg" role="status" style="margin-top:14px; font-size:14px; min-height:20px;"></div>
+    </div>
+</section>
+
+<section id="dashboard" class="section">
+    <div class="section-header">
+        <h2>Summary</h2>
+        <p>Numbers come only from your last scan. Click a card to filter the list.</p>
+    </div>
+    <div class="dashboard-grid">
+        <div class="stat-card" onclick="setFilter('ALL')">
+            <div class="stat-icon primary">👤</div>
+            <div class="stat-content"><h3>Accounts found</h3><div class="value" id="totalAccounts">0</div><div class="hint">Found with email evidence</div></div>
+        </div>
+        <div class="stat-card" onclick="setFilter('VERIFIED')">
+            <div class="stat-icon success">✔</div>
+            <div class="stat-content"><h3>Verified</h3><div class="value" id="verifiedAccounts">0</div><div class="hint">Signup or verification email seen</div></div>
+        </div>
+        <div class="stat-card" onclick="setFilter('ACTIVE')">
+            <div class="stat-icon warning">⏱</div>
+            <div class="stat-content"><h3>Active</h3><div class="value" id="activeAccounts">0</div><div class="hint">Recent sign-in or order email</div></div>
+        </div>
+        <div class="stat-card" onclick="setFilter('HIGH')">
+            <div class="stat-icon danger">🚨</div>
+            <div class="stat-content"><h3>High risk</h3><div class="value" id="highRiskAccounts">0</div><div class="hint">Reported breach found</div></div>
+        </div>
+    </div>
+    <div id="scanInfo" style="margin-top:18px; font-size:13.5px;"></div>
+</section>
+
+<section id="accounts" class="section">
+    <div class="section-header">
+        <h2>Accounts</h2>
+        <p>Each result shows where it was found and why it has its status and risk.</p>
+    </div>
+    <div class="accounts-hub">
+        <div class="hub-controls">
+            <div class="filter-pills">
+                <button type="button" class="filter-pill active" id="pill_ALL" onclick="setFilter('ALL')">All (<span id="countAll">0</span>)</button>
+                <button type="button" class="filter-pill" id="pill_HIGH" onclick="setFilter('HIGH')">High risk (<span id="countHigh">0</span>)</button>
+                <button type="button" class="filter-pill" id="pill_ACTIVE" onclick="setFilter('ACTIVE')">Active (<span id="countActive">0</span>)</button>
+                <button type="button" class="filter-pill" id="pill_UNKNOWN" onclick="setFilter('UNKNOWN')">Status unknown (<span id="countUnknown">0</span>)</button>
+            </div>
+            <input type="text" id="accountSearch" class="search-input" placeholder="Search service or domain..." oninput="render()">
+        </div>
+        <div id="accountList" class="account-cards-grid"></div>
+    </div>
+</section>
+
+<section id="deleteSection" class="section">
+    <div class="section-header">
+        <h2>Account deletion help</h2>
+        <p>Pick a found account, get a deletion request letter, and track your request.</p>
+    </div>
+    <div class="scan-box-main" style="text-align:left;">
+        <div class="form-group">
+            <label for="delAccount">Account</label>
+            <select id="delAccount" onchange="generateLetter()"></select>
+        </div>
+        <div class="form-group">
+            <label for="userNameInput">Your full name (optional)</label>
+            <input type="text" id="userNameInput" placeholder="Your name" oninput="generateLetter()">
+        </div>
+        <div class="form-group">
+            <label for="letterText">Deletion request letter</label>
+            <textarea id="letterText" style="min-height:220px;" readonly placeholder="Choose an account to create the letter."></textarea>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+            <a id="delLink" class="btn btn-secondary btn-sm" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Find official deletion page</a>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copyLetter()">Copy letter</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="downloadLetter()">Download .txt</button>
+            <button type="button" class="btn btn-sm" onclick="trackDeletion()">Track this request</button>
+        </div>
+        <p style="font-size:13px;">Find the service's privacy or support address on its official website. This app does not guess it.</p>
+        <h3 style="margin:18px 0 8px;">Your deletion requests</h3>
+        <div id="delList"></div>
+    </div>
+</section>
+
+<div id="accountModal" class="modal-overlay" onclick="if (event.target.id === 'accountModal') closeModal()">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closeModal()" aria-label="Close">✕</button>
+        <div class="modal-header"><h3 id="modalTitle"></h3><p id="modalSub"></p></div>
+        <div class="modal-body" id="modalBody"></div>
+    </div>
+</div>
+
+<footer class="footer">
+    <p>Digital Privacy Assistant. Results come only from your own Gmail and optional breach data. Nothing is invented.</p>
+</footer>
+
+<script src="script.js"></script>
+      <div id="deleteHelpBox"></div>
+</body>
+</html>

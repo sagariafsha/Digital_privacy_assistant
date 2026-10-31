@@ -1,0 +1,19 @@
+# secrets (kabhi upload nahi hone chahiye)
+client_secret.json
+tokens/
+*.env
+
+# build output aur cache
+target/
+jdm-sites.json
+
+# zip aur logs
+*.zip
+*.log
+*.class
+
+# editor aur Windows
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
