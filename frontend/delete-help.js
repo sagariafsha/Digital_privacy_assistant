@@ -1,7 +1,7 @@
 // Delete help for one account.
 // Usage: showDeleteHelp("swiggy.com", "Swiggy", document.getElementById("deleteHelpBox"));
 // Needs an empty container, for example: <div id="deleteHelpBox"></div>
-const API = "http://localhost:8080/api";
+const API = "/api";
 
 async function showDeleteHelp(domain, service, box) {
   box.textContent = "Loading deletion steps...";

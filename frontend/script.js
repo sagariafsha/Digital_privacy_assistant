@@ -1,10 +1,12 @@
 /* Digital Privacy Assistant - frontend
    Shows only what the backend returns. No demo data, no invented scores. */
 
-const API = "http://localhost:8080/api";
+const API = "/api";
 const STATUS_LABELS = { PENDING: "Pending", SUBMITTED: "Submitted", CONFIRMED_BY_USER: "Confirmed by you" };
 
 let connectedEmail = "";
+let accessToken = ""; // Kept in page memory only; never written to local/session storage.
+let googleClientId = "";
 let accounts = [];
 let scanMeta = null;
 let deletions = [];
@@ -27,13 +29,15 @@ function setStatus(text, type) {
 async function api(path, method = "GET", body) {
     let res;
     try {
+        const headers = body ? { "Content-Type": "application/json" } : {};
+        if (accessToken) headers.Authorization = "Bearer " + accessToken;
         res = await fetch(API + path, {
             method,
-            headers: body ? { "Content-Type": "application/json" } : {},
+            headers,
             body: body ? JSON.stringify(body) : undefined
         });
     } catch (e) {
-        throw new Error("Cannot reach the backend at localhost:8080. Start it with: mvn compile exec:java");
+        throw new Error("Cannot reach the website server. Please try again shortly.");
     }
     let data = {};
     try { data = await res.json(); } catch (_) {}
@@ -46,6 +50,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     $("emailInput").addEventListener("keydown", e => { if (e.key === "Enter") findAccounts(); });
     ensureSections();
     renderFollowUps();
+    try {
+        const config = await api("/config");
+        googleClientId = config.googleClientId || "";
+    } catch (_) {}
     await refreshStatus();
     if (connectedEmail) await loadSaved();
     render();
@@ -53,6 +61,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 async function refreshStatus() {
     const badge = $("backendModeText");
+    if (!accessToken) {
+        connectedEmail = "";
+        badge.textContent = "Google not connected";
+        $("connectBtn").style.display = "";
+        $("disconnectBtn").style.display = "none";
+        return;
+    }
     try {
         const s = await api("/google-status");
         connectedEmail = s.connected ? s.email : "";
@@ -63,8 +78,16 @@ async function refreshStatus() {
         if (!s.connected && s.reason) setStatus(s.reason, "info");
     } catch (e) {
         connectedEmail = "";
-        badge.textContent = "Backend offline";
-        setStatus(e.message, "error");
+        if (String(e.message).includes("401")) {
+            accessToken = "";
+            badge.textContent = "Google not connected";
+            $("connectBtn").style.display = "";
+            $("disconnectBtn").style.display = "none";
+            setStatus("Google authorization expired. Connect your account again.", "error");
+        } else {
+            badge.textContent = "Backend offline";
+            setStatus(e.message, "error");
+        }
     }
 }
 
@@ -76,16 +99,30 @@ async function loadSaved() {
 }
 
 /* ---------- Google connection ---------- */
-async function connectGoogle() {
+function connectGoogle() {
     $("connectBtn").disabled = true;
-    setStatus("Waiting for Google sign-in. Finish it in the Google window, then come back here.", "info");
+    setStatus("Opening Google sign-in...", "info");
     try {
-        const s = await api("/google-connect", "POST");
-        if (!s.connected) throw new Error(s.reason || "Google connection failed.");
-        await refreshStatus();
-        await loadSaved();
-        render();
-        setStatus("Connected as " + s.email + ". Click Find Accounts.", "success");
+        if (!googleClientId) throw new Error("Google sign-in is not configured yet.");
+        if (!window.google || !google.accounts || !google.accounts.oauth2) throw new Error("Google sign-in could not load. Refresh the page and try again.");
+        const client = google.accounts.oauth2.initTokenClient({
+            client_id: googleClientId,
+            scope: "https://www.googleapis.com/auth/gmail.readonly",
+            callback: async response => {
+                if (response.error || !response.access_token) {
+                    setStatus("Google sign-in was not completed. Please try again.", "error");
+                    return;
+                }
+                accessToken = response.access_token;
+                await refreshStatus();
+                if (connectedEmail) {
+                    await loadSaved();
+                    render();
+                    setStatus("Connected as " + connectedEmail + ". Click Find Accounts.", "success");
+                }
+            }
+        });
+        client.requestAccessToken({ prompt: "select_account" });
     } catch (e) {
         setStatus(e.message, "error");
     } finally {
@@ -94,15 +131,11 @@ async function connectGoogle() {
 }
 
 async function disconnectGoogle() {
-    try {
-        await api("/google-disconnect", "POST");
-        accounts = []; scanMeta = null; deletions = [];
-        await refreshStatus();
-        fillDeleteSelect(); renderDeletions(); render();
-        setStatus("Google account disconnected.", "success");
-    } catch (e) {
-        setStatus(e.message, "error");
-    }
+    accessToken = "";
+    accounts = []; scanMeta = null; deletions = [];
+    await refreshStatus();
+    fillDeleteSelect(); renderDeletions(); render();
+    setStatus("Google account disconnected from this page.", "success");
 }
 
 /* ---------- find accounts ---------- */
@@ -457,7 +490,7 @@ async function checkPassword() {
         try {
             res = await fetch(API + "/breach/password", { method: "POST", body: pw });
         } catch (e) {
-            throw new Error("Cannot reach the backend at localhost:8080.");
+            throw new Error("Cannot reach the website server.");
         }
         const d = await res.json().catch(() => ({}));
         if (!res.ok || d.error) throw new Error(d.error || "Request failed (" + res.status + ")");

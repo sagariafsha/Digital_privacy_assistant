@@ -1,4 +1,5 @@
 import com.google.api.client.auth.oauth2.Credential;
+import com.google.api.client.auth.oauth2.BearerToken;
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp;
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
@@ -30,11 +31,15 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -80,10 +85,9 @@ import java.util.stream.Collectors;
 public class Main {
 
     // ------------------------------------------------------------------ configuration
-    static final int PORT = Integer.parseInt(env("PORT", "8080"));
-    static final String CLIENT_SECRET_FILE = env("GOOGLE_CLIENT_SECRET_FILE", "client_secret.json");
-    static final String TOKENS_DIR = env("TOKENS_DIR", "tokens");
-    static final int OAUTH_CALLBACK_PORT = Integer.parseInt(env("OAUTH_CALLBACK_PORT", "8888"));
+    static final int PORT = Integer.parseInt(env("PORT", "5500"));
+    static final String GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", "990519841196-d046a41pajcn0q0f83cdraisbcfqqgjo.apps.googleusercontent.com");
+    static final String FRONTEND_DIR = env("FRONTEND_DIR", "../frontend");
     static final String DB_URL = env("DB_URL",
             "jdbc:mysql://localhost:3306/privacy_assistant?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC");
     static final String DB_USER = env("DB_USER", "root");
@@ -118,9 +122,7 @@ public class Main {
     static final HttpClient HTTP = HttpClient.newHttpClient();
 
     static NetHttpTransport transport;
-    static FileDataStoreFactory dataStoreFactory;
-    static GoogleAuthorizationCodeFlow flow;
-    static volatile String cachedEmail;
+    static final ThreadLocal<String> REQUEST_ACCESS_TOKEN = new ThreadLocal<>();
     static volatile boolean dbReady = false;
 
     // ------------------------------------------------------------------ small types
@@ -146,20 +148,20 @@ public class Main {
     // ------------------------------------------------------------------ startup
     public static void main(String[] args) throws Exception {
         transport = GoogleNetHttpTransport.newTrustedTransport();
-        dataStoreFactory = new FileDataStoreFactory(new File(TOKENS_DIR));
         initDatabase();
 
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", PORT), 0);
+        HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
         route(server, "/api/health", ex -> Map.of("ok", true, "database", dbReady), "GET");
+        route(server, "/api/config", ex -> Map.of("googleClientId", GOOGLE_CLIENT_ID), "GET");
         route(server, "/api/google-status", ex -> googleStatus(), "GET");
-        route(server, "/api/google-connect", ex -> googleConnect(), "POST");
-        route(server, "/api/google-disconnect", ex -> googleDisconnect(), "POST");
         route(server, "/api/scan", ex -> scan(), "POST");
         route(server, "/api/accounts", ex -> listSavedAccounts(), "GET");
         route(server, "/api/deletions", ex -> "POST".equals(ex.getRequestMethod()) ? createDeletion(ex) : listDeletions(), "GET", "POST");
         route(server, "/api/deletions/status", Main::updateDeletionStatus, "POST");
+        route(server, "/api/delete-help", Main::deleteHelp, "GET");
         route(server, "/api/breach/email", Main::breachEmail, "GET");
         route(server, "/api/breach/password", Main::breachPassword, "POST");
+        server.createContext("/", Main::serveFrontend);
         server.setExecutor(Executors.newFixedThreadPool(8));
         server.start();
 
@@ -170,40 +172,15 @@ public class Main {
     }
 
     // ------------------------------------------------------------------ Google OAuth
-    static synchronized GoogleAuthorizationCodeFlow flow() throws IOException {
-        if (flow != null) return flow;
-        File f = new File(CLIENT_SECRET_FILE);
-        if (!f.exists()) {
-            throw new ApiException(503, "Google OAuth is not configured: file '" + f.getAbsolutePath()
-                    + "' was not found. Download the OAuth client JSON from Google Cloud Console and save it there.");
-        }
-        GoogleClientSecrets secrets;
-        try (FileReader r = new FileReader(f)) {
-            secrets = GoogleClientSecrets.load(JSON_FACTORY, r);
-        }
-        flow = new GoogleAuthorizationCodeFlow.Builder(transport, JSON_FACTORY, secrets,
-                Collections.singletonList(GmailScopes.GMAIL_READONLY))
-                .setDataStoreFactory(dataStoreFactory)
-                .setAccessType("offline")
-                .build();
-        return flow;
-    }
-
     static Gmail requireGmail() throws IOException {
-        Credential credential = flow().loadCredential("user");
-        if (credential == null) {
-            throw new ApiException(401, "Google account is not connected. Click 'Connect Google' first.");
-        }
+        String token = REQUEST_ACCESS_TOKEN.get();
+        if (token == null || token.isBlank()) throw new ApiException(401, "Connect your Google account to continue.");
+        Credential credential = new Credential(BearerToken.authorizationHeaderAccessMethod()).setAccessToken(token);
         return new Gmail.Builder(transport, JSON_FACTORY, credential).setApplicationName(APP_NAME).build();
     }
 
     static String requireEmail(Gmail gmail) throws IOException {
-        String email = cachedEmail;
-        if (email == null) {
-            email = gmail.users().getProfile("me").execute().getEmailAddress();
-            cachedEmail = email;
-        }
-        return email;
+        return gmail.users().getProfile("me").execute().getEmailAddress();
     }
 
     static Object googleStatus() {
@@ -216,7 +193,6 @@ public class Main {
             out.put("connected", false);
             out.put("reason", e.getMessage());
         } catch (Exception e) {
-            cachedEmail = null;
             out.put("connected", false);
             out.put("reason", "Could not verify the Google connection: " + e.getMessage());
         }
@@ -225,18 +201,36 @@ public class Main {
         return out;
     }
 
-    static Object googleConnect() throws Exception {
-        Credential credential = new AuthorizationCodeInstalledApp(flow(),
-                new LocalServerReceiver.Builder().setPort(OAUTH_CALLBACK_PORT).build()).authorize("user");
-        if (credential == null) throw new ApiException(401, "Google authorization was not completed.");
-        cachedEmail = null;
-        return googleStatus();
+    static Object deleteHelp(HttpExchange ex) {
+        Map<String, String> query = parseQuery(ex.getRequestURI().getRawQuery());
+        String service = query.getOrDefault("service", "online service").trim();
+        String domain = query.getOrDefault("domain", "").trim();
+        if (service.isEmpty()) service = domain.isEmpty() ? "online service" : domain;
+        String search = "how to delete " + service + (domain.isEmpty() ? " account official privacy page" : " account " + domain + " official");
+        return Map.of("difficulty", "limited", "nextStep", "Check the service's official help or privacy page before sending a request.",
+                "notes", "The assistant does not verify account deletion or guess service-specific contacts.",
+                "deletionUrl", "https://www.google.com/search?q=" + URLEncoder.encode(search, StandardCharsets.UTF_8),
+                "source", "Search link; verify that the destination is the official service website.");
     }
 
-    static Object googleDisconnect() throws Exception {
-        flow().getCredentialDataStore().delete("user");
-        cachedEmail = null;
-        return Map.of("connected", false);
+    static void serveFrontend(HttpExchange ex) throws IOException {
+        String requested = ex.getRequestURI().getPath();
+        String name = switch (requested) {
+            case "/", "/index.html" -> "index.html";
+            case "/script.js" -> "script.js";
+            case "/delete-help.js" -> "delete-help.js";
+            case "/style.css" -> "style.css";
+            default -> null;
+        };
+        if (name == null) { send(ex, 404, error("Not found")); return; }
+        Path file = Paths.get(FRONTEND_DIR, name).normalize();
+        if (!Files.isRegularFile(file)) { send(ex, 404, error("Website files are unavailable.")); return; }
+        String type = name.endsWith(".html") ? "text/html; charset=utf-8" : name.endsWith(".css") ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8";
+        byte[] bytes = Files.readAllBytes(file);
+        ex.getResponseHeaders().set("Content-Type", type);
+        ex.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        ex.sendResponseHeaders(200, bytes.length);
+        try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
     }
 
     // ------------------------------------------------------------------ account discovery
@@ -811,10 +805,15 @@ public class Main {
                     return;
                 }
                 String origin = ex.getRequestHeaders().getFirst("Origin");
-                if (origin != null && !ALLOWED_ORIGINS.contains(origin)) {
+                String host = ex.getRequestHeaders().getFirst("Host");
+                String proto = ex.getRequestHeaders().getFirst("X-Forwarded-Proto");
+                if (proto == null || proto.isBlank()) proto = "http";
+                boolean sameOrigin = origin != null && host != null && origin.equals(proto + "://" + host);
+                if (origin != null && !sameOrigin && !ALLOWED_ORIGINS.contains(origin)) {
                     throw new ApiException(403, "This website origin is not allowed to call the backend.");
                 }
                 if (!allowed.contains(ex.getRequestMethod())) throw new ApiException(405, "Method not allowed.");
+                REQUEST_ACCESS_TOKEN.set(bearerToken(ex));
                 send(ex, 200, endpoint.handle(ex));
             } catch (ApiException e) {
                 send(ex, e.code, error(e.getMessage()));
@@ -824,8 +823,28 @@ public class Main {
             } catch (Exception e) {
                 e.printStackTrace();
                 send(ex, 500, error("Unexpected server error: " + e.getMessage()));
+            } finally {
+                REQUEST_ACCESS_TOKEN.remove();
             }
         });
+    }
+
+    static String bearerToken(HttpExchange ex) {
+        String authorization = ex.getRequestHeaders().getFirst("Authorization");
+        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) return null;
+        return authorization.substring(7).trim();
+    }
+
+    static Map<String, String> parseQuery(String query) {
+        Map<String, String> params = new HashMap<>();
+        if (query == null || query.isBlank()) return params;
+        for (String item : query.split("&")) {
+            String[] pair = item.split("=", 2);
+            String key = URLDecoder.decode(pair[0], StandardCharsets.UTF_8);
+            String value = pair.length > 1 ? URLDecoder.decode(pair[1], StandardCharsets.UTF_8) : "";
+            params.put(key, value);
+        }
+        return params;
     }
 
     static void send(HttpExchange ex, int code, Object body) throws IOException {
@@ -836,7 +855,7 @@ public class Main {
             h.set("Vary", "Origin");
         }
         h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        h.set("Access-Control-Allow-Headers", "Content-Type");
+        h.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
         if (body == null) {
             ex.sendResponseHeaders(code, -1);
             ex.close();
@@ -874,3 +893,4 @@ public class Main {
         return v == null || v.isBlank() ? fallback : v;
     }
 }
+
