@@ -1,3 +1,0 @@
-<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">
-  <localRepository>${user.dir}/.m2/repository</localRepository>
-</settings>
